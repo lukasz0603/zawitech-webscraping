@@ -1,12 +1,10 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 import requests
 from bs4 import BeautifulSoup
 from uuid import uuid4
-import databases, os, io
-
-
+import databases
+import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
@@ -74,34 +72,7 @@ async def register(name: str = Form(...), website: str = Form(...)):
 
     return {"success": True, "message": message, "client_id": client_id}
 
-# GET /client/{name} – pobiera całe konto klienta
-@app.get("/client/{name}")
-async def get_client(name: str):
-    row = await database.fetch_one(
-        """
-        SELECT name, website, extracted_text, custom_prompt
-        FROM clients
-        WHERE name = :name
-        """,
-        values={"name": name}
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Firma nie znaleziona")
-    return dict(row)
 
-# POST /update-data – aktualizuje ręcznie extracted_text
-@app.post("/update-data")
-async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
-    await database.execute(
-        """
-        UPDATE clients
-        SET extracted_text = :text,
-            extracted_text_timestamp = NOW()
-        WHERE name = :name
-        """,
-        values={"name": name, "text": extracted_text[:8000]}
-    )
-    return {"success": True, "message": "Dane zostały zaktualizowane"}
 
 @app.post("/prompt")
 async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
@@ -115,46 +86,4 @@ async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
         values={"name": name, "prompt": prompt}
     )
     return {"success": True, "message": "Prompt zapisany pomyślnie"}
-
-
-# 1) Upload PDF
-@app.post("/upload-pdf")
-async def upload_pdf(
-    client_name: str = Form(...),
-    pdf_file: UploadFile = File(...)
-):
-    data = await pdf_file.read()
-    await database.execute(
-      """
-      INSERT INTO documents (client_name, file_name, file_data)
-      VALUES (:name, :fname, :data)
-      """,
-      values={
-        "name": client_name,
-        "fname": pdf_file.filename,
-        "data": data
-      }
-    )
-    return {"success": True, "message": f"Załadowano {pdf_file.filename}"}
-
-# 2) Download latest PDF
-@app.get("/download-pdf/{client_name}")
-async def download_pdf(client_name: str):
-    row = await database.fetch_one(
-      """
-      SELECT file_name, file_data
-      FROM documents
-      WHERE client_name = :name
-      ORDER BY uploaded_at DESC
-      LIMIT 1
-      """,
-      values={"name": client_name}
-    )
-    if not row:
-        raise HTTPException(404, "Nie znaleziono pliku dla tej firmy")
-    return StreamingResponse(
-      io.BytesIO(row["file_data"]),
-      media_type="application/pdf",
-      headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
-    )
     
