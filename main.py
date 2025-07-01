@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
@@ -10,11 +10,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
 
 app = FastAPI()
-
-# Jeśli formularz jest na innej domenie – pozwalamy na CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # lub ["https://twoja-strona.pl"]
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,31 +37,37 @@ async def shutdown():
 
 @app.post("/register")
 async def register(name: str = Form(...), website: str = Form(...)):
-    client_id = str(uuid4())
-    text = extract_text_from_website(website)
+    text = extract_text_from_website(website)[:8000]
 
-    await database.execute(
-        query="""
-        INSERT INTO clients (id, name, website, extracted_text)
-        VALUES (:id, :name, :website, :text)
-        """,
-        values={
-            "id": client_id,
-            "name": name,
-            "website": website,
-            "text": text[:8000]
-        }
+    # 1) Sprawdź, czy firma już istnieje
+    existing = await database.fetch_one(
+        "SELECT id FROM clients WHERE name = :name",
+        values={"name": name}
     )
 
-    return {"success": True, "message": "Dane zostały zapisane", "client_id": client_id}
+    if existing:
+        # 2a) Jeśli istnieje — tylko aktualizuj extracted_text + website
+        await database.execute(
+            """
+            UPDATE clients
+            SET website = :website,
+                extracted_text = :text
+            WHERE name = :name
+            """,
+            values={"name": name, "website": website, "text": text}
+        )
+        client_id = existing["id"]
+        message = "Dane firmy zostały zaktualizowane"
+    else:
+        # 2b) Jeśli nie ma — wstaw nowy rekord
+        client_id = str(uuid4())
+        await database.execute(
+            """
+            INSERT INTO clients (id, name, website, extracted_text)
+            VALUES (:id, :name, :website, :text)
+            """,
+            values={"id": client_id, "name": name, "website": website, "text": text}
+        )
+        message = "Dane firmy zostały zapisane"
 
-
-@app.post("/prompt")
-async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
-    query = """
-        UPDATE clients
-        SET custom_prompt = :prompt
-        WHERE name = :name
-    """
-    await database.execute(query=query, values={"name": name, "prompt": prompt})
-    return {"success": True, "message": "Prompt zapisany pomyślnie"}
+    return {"success": True, "message": message, "client_id": client_id}
