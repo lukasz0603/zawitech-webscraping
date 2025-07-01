@@ -56,3 +56,14 @@ async def register(name: str = Form(...), website: str = Form(...)):
     )
 
     return {"success": True, "message": "Dane zostały zapisane", "client_id": client_id}
+
+
+@app.post("/prompt")
+async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
+    query = """
+        UPDATE clients
+        SET custom_prompt = :prompt
+        WHERE name = :name
+    """
+    await database.execute(query=query, values={"name": name, "prompt": prompt})
+    return {"success": True, "message": "Prompt zapisany pomyślnie"}
