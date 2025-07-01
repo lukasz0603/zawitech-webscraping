@@ -158,11 +158,3 @@ async def download_pdf(client_name: str):
       headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
     )
     
-# Pamiętaj o eventach start/stop:
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
