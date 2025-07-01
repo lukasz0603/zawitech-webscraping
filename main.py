@@ -1,11 +1,12 @@
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import requests
 from bs4 import BeautifulSoup
 from uuid import uuid4
-import databases
-import os
-from fastapi import HTTPException
+import databases, os, io
+
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
