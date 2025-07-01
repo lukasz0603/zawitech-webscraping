@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from uuid import uuid4
 import databases
 import os
+from fastapi import HTTPException
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
@@ -72,7 +73,34 @@ async def register(name: str = Form(...), website: str = Form(...)):
 
     return {"success": True, "message": message, "client_id": client_id}
 
+# GET /client/{name} – pobiera całe konto klienta
+@app.get("/client/{name}")
+async def get_client(name: str):
+    row = await database.fetch_one(
+        """
+        SELECT name, website, extracted_text, custom_prompt
+        FROM clients
+        WHERE name = :name
+        """,
+        values={"name": name}
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Firma nie znaleziona")
+    return dict(row)
 
+# POST /update-data – aktualizuje ręcznie extracted_text
+@app.post("/update-data")
+async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
+    await database.execute(
+        """
+        UPDATE clients
+        SET extracted_text = :text,
+            extracted_text_timestamp = NOW()
+        WHERE name = :name
+        """,
+        values={"name": name, "text": extracted_text[:8000]}
+    )
+    return {"success": True, "message": "Dane zostały zaktualizowane"}
 
 @app.post("/prompt")
 async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
@@ -86,4 +114,15 @@ async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
         values={"name": name, "prompt": prompt}
     )
     return {"success": True, "message": "Prompt zapisany pomyślnie"}
+
+
+
     
+# Pamiętaj o eventach start/stop:
+@app.on_event("startup")
+async def startup():
+    await database.connect()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await database.disconnect()
