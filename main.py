@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import requests
 from bs4 import BeautifulSoup
 from uuid import uuid4
 import databases
 import os
+import io
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
@@ -115,4 +117,44 @@ async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
         values={"name": name, "text": extracted_text[:8000]}
     )
     return {"success": True, "message": "Dane zostały zaktualizowane"}
-    
+
+# 1) Upload PDF
+@app.post("/upload-pdf")
+async def upload_pdf(
+    client_name: str = Form(...),
+    pdf_file: UploadFile = File(...)
+):
+    data = await pdf_file.read()
+    await database.execute(
+      """
+      INSERT INTO documents (client_name, file_name, file_data)
+      VALUES (:name, :fname, :data)
+      """,
+      values={
+        "name": client_name,
+        "fname": pdf_file.filename,
+        "data": data
+      }
+    )
+    return {"success": True, "message": f"Załadowano {pdf_file.filename}"}
+
+# 2) Download latest PDF
+@app.get("/download-pdf/{client_name}")
+async def download_pdf(client_name: str):
+    row = await database.fetch_one(
+      """
+      SELECT file_name, file_data
+      FROM documents
+      WHERE client_name = :name
+      ORDER BY uploaded_at DESC
+      LIMIT 1
+      """,
+      values={"name": client_name}
+    )
+    if not row:
+        raise HTTPException(404, "Nie znaleziono pliku dla tej firmy")
+    return StreamingResponse(
+      io.BytesIO(row["file_data"]),
+      media_type="application/pdf",
+      headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
+    )
