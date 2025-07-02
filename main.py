@@ -7,6 +7,7 @@ from uuid import uuid4
 import databases
 import os
 import io
+from passlib.context import CryptContext
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
@@ -158,3 +159,27 @@ async def download_pdf(client_name: str):
       media_type="application/pdf",
       headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
     )
+
+@app.post("/users/register")
+async def register_user(
+    username: str = Form(...),
+    password: str = Form(...),
+    company_name: str = Form(...)
+):
+    # Zhashuj hasło
+    password_hash = pwd_ctx.hash(password)
+
+    # Wstaw do bazy
+    try:
+        await database.execute(
+            """
+            INSERT INTO users (username, password_hash, company_name)
+            VALUES (:u, :p, :c)
+            """,
+            values={"u": username, "p": password_hash, "c": company_name}
+        )
+    except Exception as e:
+        # zakładamy, że to UNIQUE violation
+        raise HTTPException(400, "Ta nazwa użytkownika jest już zajęta")
+
+    return {"success": True}
