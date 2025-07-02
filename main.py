@@ -167,26 +167,41 @@ async def download_pdf(client_name: str):
 
 @app.post("/users/register")
 async def register_user(
-    username: str       = Form(...),
-    password: str       = Form(...),
-    email:    str       = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    email:    str = Form(...),
 ):
-    # hash hasła
     password_hash = pwd_ctx.hash(password)
 
-    # zapis do bazy
+    # Wstawiamy nowego użytkownika i od razu pobieramy wygenerowany embed_key
     try:
-        await database.execute(
+        row = await database.fetch_one(
             """
             INSERT INTO users (username, password_hash, email)
             VALUES (:u, :p, :e)
+            RETURNING embed_key
             """,
             values={"u": username, "p": password_hash, "e": email}
         )
     except Exception:
         raise HTTPException(400, "Użytkownik lub email już istnieje")
 
-    return {"success": True}
+    embed_key = row["embed_key"]
+
+    # Teraz aktualizujemy (lub wstawiamy) odpowiadający wiersz w clients
+    # Zakładam, że w clients kolumna 'name' to odpowiadający username.
+    # Jeśli nie ma wiersza – tworzymy go minimalnie z id i name/embed_key.
+    await database.execute(
+        """
+        INSERT INTO clients (name, embed_key)
+        VALUES (:name, :ek)
+        ON CONFLICT (name) DO
+          UPDATE SET embed_key = EXCLUDED.embed_key
+        """,
+        values={"name": username, "ek": embed_key}
+    )
+
+    return {"success": True, "embed_key": embed_key}
 
 # ——— Logowanie ———
 @app.post("/users/login")
