@@ -15,6 +15,8 @@ database = databases.Database(DATABASE_URL)
 # Kontekst do hash’owania haseł
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
