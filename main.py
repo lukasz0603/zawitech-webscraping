@@ -21,6 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Kontekst do hash’owania haseł
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 def extract_text_from_website(url: str) -> str:
     try:
         response = requests.get(url, timeout=10)
