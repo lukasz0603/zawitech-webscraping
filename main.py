@@ -34,6 +34,55 @@ async def startup():
 async def shutdown():
     await database.disconnect()
 
+# ——— Chatbot ———
+# Systemowy prompt
+system_prompt = {
+    "role": "system",
+    "content": (
+        "Jesteś polskojęzycznym asystentem AI w firmie Zawitech, która oferuje profesjonalne usługi SEO. "
+        "Najpierw zapytaj: Czy klient ma już stronę internetową? Czy działa lokalnie, ogólnopolsko czy międzynarodowo? "
+        "Jakie ma cele (więcej odwiedzin, sprzedaż)? Jaki ma budżet? "
+        "Następnie zaproponuj jeden z trzech pakietów SEO: START (3000 PLN), STANDARD (5000 PLN), PREMIUM (7000 PLN). "
+        "Umowa: czas nieokreślony, 1 mies. wypowiedzenia."
+    )
+}
+
+# Model danych
+class ChatHistory(BaseModel):
+    messages: List[Dict[str, str]]
+
+
+@app.post("/chat")
+async def chat(request: Request, history: ChatHistory):
+    user_ip = request.client.host
+    messages = [system_prompt] + history.messages
+
+    chat = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=messages
+    )
+    response = chat.choices[0].message.content
+
+    # 🔽 Próbujemy zapisać dane
+    try:
+        result = await database.execute(
+            query="""
+                INSERT INTO chats (messages, ip_address)
+                VALUES (:messages, :ip)
+            """,
+            values={
+                "messages": json.dumps(history.messages + [{"role": "assistant", "content": response}]),
+                "ip": user_ip
+            }
+        )
+        print("✅ Zapisano dane do bazy.")
+    except Exception as e:
+        print("❌ Błąd zapisu do bazy:", e)
+
+    return {"response": response}
+
+
+
 def extract_text_from_website(url: str) -> str:
     try:
         response = requests.get(url, timeout=10)
@@ -205,49 +254,3 @@ async def login_user(
         raise HTTPException(401, "Nieprawidłowe dane logowania")
     return {"success": True, "username": row["username"]}
 
-# ——— Chatbot ———
-# Systemowy prompt
-system_prompt = {
-    "role": "system",
-    "content": (
-        "Jesteś polskojęzycznym asystentem AI w firmie Zawitech, która oferuje profesjonalne usługi SEO. "
-        "Najpierw zapytaj: Czy klient ma już stronę internetową? Czy działa lokalnie, ogólnopolsko czy międzynarodowo? "
-        "Jakie ma cele (więcej odwiedzin, sprzedaż)? Jaki ma budżet? "
-        "Następnie zaproponuj jeden z trzech pakietów SEO: START (3000 PLN), STANDARD (5000 PLN), PREMIUM (7000 PLN). "
-        "Umowa: czas nieokreślony, 1 mies. wypowiedzenia."
-    )
-}
-
-# Model danych
-class ChatHistory(BaseModel):
-    messages: List[Dict[str, str]]
-
-
-@app.post("/chat")
-async def chat(request: Request, history: ChatHistory):
-    user_ip = request.client.host
-    messages = [system_prompt] + history.messages
-
-    chat = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages
-    )
-    response = chat.choices[0].message.content
-
-    # 🔽 Próbujemy zapisać dane
-    try:
-        result = await database.execute(
-            query="""
-                INSERT INTO chats (messages, ip_address)
-                VALUES (:messages, :ip)
-            """,
-            values={
-                "messages": json.dumps(history.messages + [{"role": "assistant", "content": response}]),
-                "ip": user_ip
-            }
-        )
-        print("✅ Zapisano dane do bazy.")
-    except Exception as e:
-        print("❌ Błąd zapisu do bazy:", e)
-
-    return {"response": response}
