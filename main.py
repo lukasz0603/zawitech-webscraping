@@ -35,5 +35,5 @@ async def shutdown():
 # Rejestracja / logowanie
 app.include_router(users_router)
 
-# Wszystkie endpointy formularzy (register, prompt, upload-pdf, chat itd.)
+# Pozostałe formularze (register, prompt, upload-pdf, chat itd.)
 app.include_router(form_router)
