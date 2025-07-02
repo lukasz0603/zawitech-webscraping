@@ -221,6 +221,6 @@ async def generate_embed(username: str = Form(...)):
             values={"ek": embed_key, "u": username}
         )
 
-    snippet = f"""<script src="https://zawitech-chatbot.onrender.com/widget.js?client_id={embed_key}" async></script>"""
+    snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={embed_key}" async></script>"""
     return {"snippet": snippet}
     
