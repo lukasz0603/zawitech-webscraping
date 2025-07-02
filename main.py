@@ -165,24 +165,23 @@ async def download_pdf(client_name: str):
 
 @app.post("/users/register")
 async def register_user(
-    username: str = Form(...),
-    password: str = Form(...),
-    company_name: str = Form(...)
+    username: str       = Form(...),
+    password: str       = Form(...),
+    email:    str       = Form(...),
 ):
-    # Zhashuj hasło
+    # hash hasła
     password_hash = pwd_ctx.hash(password)
 
-    # Wstaw do bazy
+    # zapis do bazy
     try:
         await database.execute(
             """
-            INSERT INTO users (username, password_hash, company_name)
-            VALUES (:u, :p, :c)
+            INSERT INTO users (username, password_hash, email)
+            VALUES (:u, :p, :e)
             """,
-            values={"u": username, "p": password_hash, "c": company_name}
+            values={"u": username, "p": password_hash, "e": email}
         )
-    except Exception as e:
-        # zakładamy, że to UNIQUE violation
-        raise HTTPException(400, "Ta nazwa użytkownika jest już zajęta")
+    except Exception:
+        raise HTTPException(400, "Użytkownik lub email już istnieje")
 
     return {"success": True}
