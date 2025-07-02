@@ -1,10 +1,6 @@
 fastapi
 uvicorn
-requests
-beautifulsoup4
-databases
+pydantic
+openai>=1.0
+databases[postgresql]
 asyncpg
-python-multipart
-openai
-passlib[bcrypt]
-bcrypt
