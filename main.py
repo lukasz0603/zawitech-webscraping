@@ -11,6 +11,8 @@ from passlib.context import CryptContext
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
+# Kontekst do hash’owania haseł
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI()
 app.add_middleware(
@@ -21,8 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Kontekst do hash’owania haseł
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 def extract_text_from_website(url: str) -> str:
     try:
@@ -185,3 +186,19 @@ async def register_user(
         raise HTTPException(400, "Użytkownik lub email już istnieje")
 
     return {"success": True}
+
+# ——— Logowanie ———
+@app.post("/users/login")
+async def login_user(
+    login:    str = Form(...),  # tu user może podać username lub email
+    password: str = Form(...),
+):
+    # znajdź usera po username lub email
+    row = await database.fetch_one(
+        "SELECT username,password_hash FROM users WHERE username=:l OR email=:l",
+        values={"l": login}
+    )
+    if not row or not pwd_ctx.verify(password, row["password_hash"]):
+        raise HTTPException(401, "Nieprawidłowe dane logowania")
+    return {"success": True, "username": row["username"]}
+    
