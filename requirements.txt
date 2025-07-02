@@ -7,3 +7,4 @@ asyncpg
 python-multipart
 openai
 passlib[bcrypt]
+bcrypt
