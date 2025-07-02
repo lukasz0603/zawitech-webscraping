@@ -6,3 +6,4 @@ databases
 asyncpg
 python-multipart
 openai
+passlib[bcrypt]
