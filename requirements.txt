@@ -7,7 +7,3 @@ asyncpg
 python-multipart
 passlib[bcrypt]
 bcrypt
-uvicorn
-pydantic
-openai>=1.0
-databases[postgresql]
