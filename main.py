@@ -8,6 +8,7 @@ import databases
 import os
 import io
 from passlib.context import CryptContext
+import uuid
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
@@ -201,4 +202,25 @@ async def login_user(
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
     return {"success": True, "username": row["username"]}
+
+# ——— AUTOMATYZACJA ———
+@app.post("/users/generate-embed")
+async def generate_embed(username: str = Form(...)):
+    row = await database.fetch_one(
+        "SELECT embed_key FROM users WHERE username = :u",
+        values={"u": username}
+    )
+    if not row:
+        raise HTTPException(404, "Nie znaleziono użytkownika")
+
+    embed_key = row["embed_key"] or str(uuid.uuid4())
+    # jeśli było NULL, zaktualizuj
+    if row["embed_key"] is None:
+        await database.execute(
+            "UPDATE users SET embed_key = :ek WHERE username = :u",
+            values={"ek": embed_key, "u": username}
+        )
+
+    snippet = f"""<script src="https://zawitech-chatbot.onrender.com/widget.js?client_id={embed_key}" async></script>"""
+    return {"snippet": snippet}
     
