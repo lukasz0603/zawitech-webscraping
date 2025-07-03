@@ -9,6 +9,7 @@ import os
 import io
 from passlib.context import CryptContext
 import uuid
+from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
