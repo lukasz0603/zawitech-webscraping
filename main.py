@@ -293,4 +293,22 @@ async def generate_embed(username: str = Form(...)):
 
     snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={embed_key}" async></script>"""
     return {"snippet": snippet}
+
+
+@app.get("/chats")
+async def list_chats():
+    """
+    Zwraca wszystkie czaty posortowane malejąco po czasie.
+    Każdy rekord ma: client_id, messages (JSON) oraz timestamp.
+    """
+    rows = await database.fetch_all(
+        """
+        SELECT client_id,
+               messages,
+               timestamp    -- lub jak to nazwałeś w DB
+        FROM chats
+        ORDER BY timestamp DESC
+        """
+    )
+    return [dict(row) for row in rows]
     
