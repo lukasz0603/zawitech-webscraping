@@ -228,7 +228,7 @@ async def register_user(
 ):
     password_hash = pwd_ctx.hash(password)
 
-    # Wstawiamy nowego użytkownika i od razu pobieramy wygenerowany embed_key
+    # 1) Wstawiamy nowego użytkownika i od razu pobieramy wygenerowany embed_key
     try:
         row = await database.fetch_one(
             """
@@ -243,9 +243,7 @@ async def register_user(
 
     embed_key = row["embed_key"]
 
-    # Teraz aktualizujemy (lub wstawiamy) odpowiadający wiersz w clients
-    # Zakładam, że w clients kolumna 'name' to odpowiadający username.
-    # Jeśli nie ma wiersza – tworzymy go minimalnie z id i name/embed_key.
+    # 2) Aktualizujemy/insertujemy wiersz w clients
     await database.execute(
         """
         INSERT INTO clients (name, embed_key)
@@ -254,6 +252,16 @@ async def register_user(
           UPDATE SET embed_key = EXCLUDED.embed_key
         """,
         values={"name": username, "ek": embed_key}
+    )
+
+    # 3) Ustawiamy client_id w istniejących dokumentach
+    await database.execute(
+        """
+        UPDATE documents
+        SET client_id = :ek
+        WHERE client_name = :name
+        """,
+        values={"ek": embed_key, "name": username}
     )
 
     return {"success": True, "embed_key": embed_key}
