@@ -124,24 +124,37 @@ async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
     )
     return {"success": True, "message": "Dane zostały zaktualizowane"}
 
-# 1) Upload PDF
+# 1) Upload PDF z ekstrakcją tekstu
 @app.post("/upload-pdf")
 async def upload_pdf(
     client_name: str = Form(...),
     pdf_file: UploadFile = File(...)
 ):
     data = await pdf_file.read()
+    # 1. parsowanie PDF z PyPDF2
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        text_pages = [page.extract_text() or "" for page in reader.pages]
+        pdf_text = "\n\n".join(text_pages)
+    except Exception as e:
+        raise HTTPException(400, f"Nie udało się przetworzyć PDF: {e}")
+
+    # 2. zapis do bazy w jednej transakcji
     await database.execute(
-      """
-      INSERT INTO documents (client_name, file_name, file_data)
-      VALUES (:name, :fname, :data)
-      """,
-      values={
-        "name": client_name,
-        "fname": pdf_file.filename,
-        "data": data
-      }
+        """
+        INSERT INTO documents
+          (client_name, file_name, file_data, pdf_text, uploaded_at)
+        VALUES
+          (:name, :fname, :data, :pdf_text, NOW())
+        """,
+        values={
+            "name": client_name,
+            "fname": pdf_file.filename,
+            "data": data,
+            "pdf_text": pdf_text[:1000000]  # opcjonalnie przytnij długie
+        }
     )
+
     return {"success": True, "message": f"Załadowano {pdf_file.filename}"}
 
 # 2) Download latest PDF
