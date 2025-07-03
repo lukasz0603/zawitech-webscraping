@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse,JSONResponse
 import requests
 from bs4 import BeautifulSoup
 from uuid import uuid4
@@ -178,21 +178,46 @@ async def download_pdf(client_name: str):
       media_type="application/pdf",
       headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
     )
+# 3) Aktualizauje recznie pdf
 
+# GET /client/{name}/pdf
+@app.get("/client/{name}/pdf")
+async def get_pdf_text(name: str):
+    row = await database.fetch_one(
+        """
+        SELECT pdf_text
+        FROM documents
+        WHERE client_name = :name
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+        """,
+        values={"name": name}
+    )
+    if not row:
+        raise HTTPException(404, "Brak PDF dla tej firmy")
+    return JSONResponse({"pdf_text": row["pdf_text"]})
 
-# POST /update-data – aktualizuje ręcznie pdf_text
-@app.post("/update-datapdf")
-async def update_data(client_name: str = Form(...), pdf_text: str = Form(...)):
-    await database.execute(
+# POST /update-pdf-text
+@app.post("/update-pdf-text")
+async def update_pdf_text(
+    name: str = Form(...),
+    pdf_text: str = Form(...)
+):
+    # aktualizujemy tylko ostatni dokument dla danego klienta
+    result = await database.execute(
         """
         UPDATE documents
-        SET pdf_text = :text,
-            uploaded = NOW()
-        WHERE client_name = :name
+        SET pdf_text = :pdf_text
+        WHERE id = (
+          SELECT id FROM documents
+          WHERE client_name = :name
+          ORDER BY uploaded_at DESC
+          LIMIT 1
+        )
         """,
-        values={"client_name": name, "text": pdf_text[:8000]}
+        values={"name": name, "pdf_text": pdf_text[:1000000]}
     )
-    return {"success": True, "message": "Dane zostały zaktualizowane"}
+    return {"success": True, "message": "PDF zaktualizowany"}
     
 
 @app.post("/users/register")
