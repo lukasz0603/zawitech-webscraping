@@ -228,7 +228,7 @@ async def register_user(
 ):
     password_hash = pwd_ctx.hash(password)
 
-    # 1) Wstawiamy nowego użytkownika i od razu pobieramy wygenerowany embed_key
+    # 1) Wstawiamy nowego użytkownika i pobieramy embed_key
     try:
         row = await database.fetch_one(
             """
@@ -243,7 +243,7 @@ async def register_user(
 
     embed_key = row["embed_key"]
 
-    # 2) Aktualizujemy/insertujemy wiersz w clients
+    # 2) Upsert w tabeli clients
     await database.execute(
         """
         INSERT INTO clients (name, embed_key)
@@ -254,18 +254,19 @@ async def register_user(
         values={"name": username, "ek": embed_key}
     )
 
-    # 3) Ustawiamy client_id w istniejących dokumentach
+    # 3) Upsert w tabeli documents – analogicznie do clients
     await database.execute(
         """
-        UPDATE documents
-        SET client_id = :ek
-        WHERE client_name = :name
+        INSERT INTO documents (client_name, client_id)
+        VALUES (:name, :ek)
+        ON CONFLICT (client_name) DO
+          UPDATE SET client_id = EXCLUDED.client_id
         """,
-        values={"ek": embed_key, "name": username}
+        values={"name": username, "ek": embed_key}
     )
 
     return {"success": True, "embed_key": embed_key}
-
+    
 # ——— Logowanie ———
 @app.post("/users/login")
 async def login_user(
