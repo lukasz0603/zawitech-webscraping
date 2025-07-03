@@ -179,6 +179,22 @@ async def download_pdf(client_name: str):
       headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
     )
 
+
+# POST /update-data – aktualizuje ręcznie pdf_text
+@app.post("/update-datapdf")
+async def update_data(client_name: str = Form(...), pdf_text: str = Form(...)):
+    await database.execute(
+        """
+        UPDATE documents
+        SET pdf_text = :text,
+            uploaded = NOW()
+        WHERE client_name = :name
+        """,
+        values={"client_name": name, "text": pdf_text[:8000]}
+    )
+    return {"success": True, "message": "Dane zostały zaktualizowane"}
+    
+
 @app.post("/users/register")
 async def register_user(
     username: str = Form(...),
