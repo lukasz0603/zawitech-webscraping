@@ -7,3 +7,4 @@ asyncpg
 python-multipart
 passlib[bcrypt]
 bcrypt
+PyPDF2
