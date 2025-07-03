@@ -297,15 +297,15 @@ async def generate_embed(username: str = Form(...)):
 
 @app.get("/chats")
 async def list_chats():
-    """
-    Zwraca wszystkie czaty posortowane malejąco po czasie.
-    Każdy rekord ma: client_id, messages (JSON) oraz timestamp.
-    """
     rows = await database.fetch_all(
         """
-        SELECT client_id,
-               messages,
-               timestamp    -- lub jak to nazwałeś w DB
+        SELECT
+          client_id,
+          messages,
+          -- tu robimy ISO-8601 w UTC:
+          to_char(timestamp at time zone 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+            AS timestamp
         FROM chats
         ORDER BY timestamp DESC
         """
