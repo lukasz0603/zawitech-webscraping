@@ -264,6 +264,8 @@ async def generate_embed(username: str = Form(...)):
         "SELECT embed_key FROM users WHERE username = :u",
         values={"u": username}
     )
+
+    
     if not row:
         raise HTTPException(404, "Nie znaleziono użytkownika")
     embed_key = row["embed_key"] or str(uuid.uuid4())
@@ -272,6 +274,19 @@ async def generate_embed(username: str = Form(...)):
             "UPDATE users SET embed_key = :ek WHERE username = :u",
             values={"ek": embed_key, "u": username}
         )
+
+        # <<< WŁOŻ TEN FRAGMENT >>>
+    await database.execute(
+        """
+        INSERT INTO bot_generation (client_id, generated)
+        VALUES (:cid, TRUE)
+        ON CONFLICT (client_id) DO
+          UPDATE SET generated = TRUE
+        """,
+        values={"cid": embed_key}
+    )
+    # <<< KONIEC FRAGMENTU >>>
+    
     snippet = f"<script src=\"https://zawitech-frontend.onrender.com/widget.js?client_id={embed_key}\" async></script>"
     return {"snippet": snippet}
 
@@ -319,3 +334,11 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
         values={"client_id": client_id}
     )
     return [dict(row) for row in rows]
+
+@app.get("/bot/status")
+async def bot_status(client_id: str = Query(..., description="Embed key klienta")):
+    row = await database.fetch_one(
+        "SELECT generated FROM bot_generation WHERE client_id = :cid",
+        values={"cid": client_id}
+    )
+    return {"generated": bool(row and row["generated"])}
