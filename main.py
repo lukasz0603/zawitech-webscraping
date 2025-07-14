@@ -335,10 +335,4 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
     )
     return [dict(row) for row in rows]
 
-@app.get("/bot/status")
-async def bot_status(client_id: str = Query(..., description="Embed key klienta")):
-    row = await database.fetch_one(
-        "SELECT generated FROM bot_generation WHERE client_id = :cid",
-        values={"cid": client_id}
-    )
-    return {"generated": bool(row and row["generated"])}
+
