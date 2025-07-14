@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse,JSONResponse
 import requests
@@ -305,18 +305,20 @@ async def generate_embed(username: str = Form(...)):
 
 
 @app.get("/chats")
-async def list_chats():
+async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
     rows = await database.fetch_all(
         """
         SELECT
+          id,
           client_id,
           messages,
-          -- tu robimy ISO-8601 w UTC:
-          to_char(timestamp at time zone 'UTC',
+          to_char(timestamp AT TIME ZONE 'UTC',
                   'YYYY-MM-DD"T"HH24:MI:SS"Z"')
             AS timestamp
         FROM chats
+        WHERE client_id = :client_id
         ORDER BY timestamp DESC
-        """
+        """,
+        values={"client_id": client_id}
     )
     return [dict(row) for row in rows]
