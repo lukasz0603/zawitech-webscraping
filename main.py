@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query, Body
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse,JSONResponse
 import requests
@@ -304,11 +304,9 @@ async def generate_embed(username: str = Form(...)):
     return {"snippet": snippet}
 
 
-# ——— NOWY/POPRAWIONY ENDPOINT: inicjalizacja czatu ———
-@app.post("/chats")
-async def create_or_get_chat(client_id: str = Body(..., embed=True)):
-    # 1) Spróbuj znaleźć istniejący czat dla tego client_id
-    existing = await database.fetch_one(
+@app.get("/chats")
+async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
+    rows = await database.fetch_all(
         """
         SELECT
           id,
@@ -319,27 +317,9 @@ async def create_or_get_chat(client_id: str = Body(..., embed=True)):
             AS timestamp
         FROM chats
         WHERE client_id = :client_id
+        ORDER BY timestamp DESC
         """,
         values={"client_id": client_id}
     )
-    if existing:
-        # zwracamy istniejący wiersz
-        return dict(existing)
+    return [dict(row) for row in rows]
 
-    # 2) Nie ma – tworzymy nowy
-    row = await database.fetch_one(
-        """
-        INSERT INTO chats (client_id, messages, timestamp)
-        VALUES (:client_id, '[]', NOW())
-        RETURNING
-          id,
-          client_id,
-          messages,
-          to_char(timestamp AT TIME ZONE 'UTC',
-                  'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-            AS timestamp
-        """,
-        values={"client_id": client_id}
-    )
-    return dict(row)
-    
