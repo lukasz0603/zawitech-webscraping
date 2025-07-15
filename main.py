@@ -343,19 +343,13 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
 
 @app.get("/bot/exists")
 async def bot_exists(client_id: UUID = Query(...)):
-    """
-    Zwraca {"exists": true/false} dla podanego UUID.
-    """
     try:
         row = await database.fetch_one(
-            # ← przekazujemy OBIEKT uuid.UUID, asyncpg sam zrzutuje
             "SELECT 1 FROM bot_generation WHERE client_id = :cid",
             values={"cid": client_id}
         )
         return {"exists": row is not None}
-
     except Exception as e:
-        # Log na konsoli Heroku/Render ⇒ od razu zobaczysz przyczynę
-        print("❌  /bot/exists error:", e)
+        print("❌ /bot/exists error:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
     
