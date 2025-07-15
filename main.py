@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse,JSONResponse
 import requests
 from bs4 import BeautifulSoup
-from uuid import uuid4
+from uuid import uuid4,UUID
 import databases
 import os
 import io
 from passlib.context import CryptContext
 import uuid
 from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 database = databases.Database(DATABASE_URL)
