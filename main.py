@@ -337,3 +337,13 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
         values={"client_id": client_id}
     )
     return [dict(row) for row in rows]
+
+
+@app.get("/bot/exists")
+async def bot_exists(client_id: str):
+    row = await database.fetch_one(
+        "SELECT 1 FROM bot_generation WHERE client_id = :cid",
+        values={"cid": client_id}
+    )
+    return {"exists": row is not None}
+    
