@@ -300,6 +300,17 @@ async def generate_embed(username: str = Form(...)):
             values={"ek": embed_key, "u": username}
         )
 
+     # Wstaw do bot_generetion jeśli nie istnieje
+    await database.execute(
+        """
+        INSERT INTO bot_generetion (client_id, generated)
+        VALUES (:cid, :gen)
+        ON CONFLICT (client_id) DO NOTHING
+        """,
+        values={"cid": embed_key, "gen": True}
+    )
+    
+
     snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={embed_key}" async></script>"""
     return {"snippet": snippet}
 
