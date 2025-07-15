@@ -337,6 +337,22 @@ async def generate_embed(username: str = Form(...)):
     
     return {"snippet": snippet}
 
+@app.get("/users/embed-snippet")
+async def get_embed_snippet(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(401, "Brak zalogowanego użytkownika")
+
+    row = await database.fetch_one(
+        "SELECT embed_key FROM users WHERE username = :u",
+        values={"u": username}
+    )
+    if not row or not row["embed_key"]:
+        raise HTTPException(404, "Brak wygenerowanego bota")
+
+    snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={row['embed_key']}" async></script>"""
+    return {"snippet": snippet}
+    
 
 @app.get("/chats")
 async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
