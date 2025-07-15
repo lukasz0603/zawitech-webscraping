@@ -303,7 +303,7 @@ async def generate_embed(username: str = Form(...)):
      # Wstaw do bot_generetion jeśli nie istnieje
     await database.execute(
         """
-        INSERT INTO bot_generetion (client_id, generated)
+        INSERT INTO bot_generation (client_id, generated)
         VALUES (:cid, :gen)
         ON CONFLICT (client_id) DO NOTHING
         """,
