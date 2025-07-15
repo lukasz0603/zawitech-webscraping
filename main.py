@@ -22,7 +22,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://zawitech-frontend.onrender.com"],  # twoja domena frontendowa
+    allow_origins=["https://zawitech-frontend.onrender.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -284,15 +284,15 @@ async def login_user(
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
 
-    response.set_cookie(
-        key="username",
-        value=row["username"],
-        httponly=True,
-        secure=True,          # ważne na produkcji
-        samesite="None",      # kluczowe przy różnych domenach
-        max_age=int(timedelta(days=1).total_seconds()),
-        path="/"
-    )
+response.set_cookie(
+    key="username",
+    value=row["username"],
+    httponly=True,
+    secure=True,
+    samesite="None",
+    path="/",
+    max_age=int(timedelta(days=1).total_seconds())
+)
 
     return {"success": True}
 
