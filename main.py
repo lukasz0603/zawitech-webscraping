@@ -22,7 +22,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://zawitech-frontend.onrender.com"],  # twoja domena frontendowa
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -284,17 +284,19 @@ async def login_user(
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
 
-    # ➕ Ustaw cookie (ważne: HttpOnly i Secure)
     response.set_cookie(
         key="username",
         value=row["username"],
         httponly=True,
-        secure=True,  # tylko przez HTTPS
+        secure=True,          # ważne na produkcji
+        samesite="None",      # kluczowe przy różnych domenach
         max_age=int(timedelta(days=1).total_seconds()),
-        samesite="Lax"
+        path="/"
     )
 
     return {"success": True}
+
+
 # Dodaj endpoint do wylogowania:
 @app.post("/users/logout")
 async def logout_user(response: Response):
@@ -375,5 +377,10 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
 
 
 
-
+@app.get("/users/me")
+async def get_current_user(request: Request):
+    username = request.cookies.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Nie zalogowano")
+    return {"username": username}
     
