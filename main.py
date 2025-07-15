@@ -22,7 +22,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://zawitech-frontend.onrender.com"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -284,19 +284,17 @@ async def login_user(
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
 
-response.set_cookie(
-    key="username",
-    value=row["username"],
-    httponly=True,
-    secure=True,
-    samesite="None",
-    path="/",
-    max_age=int(timedelta(days=1).total_seconds())
-)
+    # ➕ Ustaw cookie (ważne: HttpOnly i Secure)
+    response.set_cookie(
+        key="username",
+        value=row["username"],
+        httponly=True,
+        secure=True,  # tylko przez HTTPS
+        max_age=int(timedelta(days=1).total_seconds()),
+        samesite="Lax"
+    )
 
     return {"success": True}
-
-
 # Dodaj endpoint do wylogowania:
 @app.post("/users/logout")
 async def logout_user(response: Response):
@@ -339,6 +337,7 @@ async def generate_embed(username: str = Form(...)):
     
     return {"snippet": snippet}
 
+
 @app.get("/users/embed-snippet")
 async def get_embed_snippet(request: Request):
     username = request.cookies.get("username")
@@ -355,7 +354,6 @@ async def get_embed_snippet(request: Request):
     snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={row['embed_key']}" async></script>"""
     return {"snippet": snippet}
     
-
 @app.get("/chats")
 async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
     rows = await database.fetch_all(
@@ -374,13 +372,3 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
         values={"client_id": client_id}
     )
     return [dict(row) for row in rows]
-
-
-
-@app.get("/users/me")
-async def get_current_user(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Nie zalogowano")
-    return {"username": username}
-    
