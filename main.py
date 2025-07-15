@@ -1,41 +1,81 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse,JSONResponse
-import requests
-from bs4 import BeautifulSoup
-from uuid import uuid4
-import databases
 import os
 import io
+import logging
+from uuid import uuid4
+
+import requests
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, Depends, HTTPException, Form, UploadFile, File, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, HttpUrl, EmailStr
+from databases import Database
 from passlib.context import CryptContext
-import uuid
-from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
+from PyPDF2 import PdfReader
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-database = databases.Database(DATABASE_URL)
-# Kontekst do hash’owania haseł
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# Environment config
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/mydb")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
+database = Database(DATABASE_URL)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+app = FastAPI(title="Client & User Management API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Dependency
+async def get_db() -> Database:
+    return database
 
+# Pydantic Schemas
+class ClientIn(BaseModel):
+    name: str
+    website: HttpUrl
 
+class ClientOut(BaseModel):
+    client_id: str
+    message: str
+    success: bool
+
+class PromptIn(BaseModel):
+    name: str
+    prompt: str
+
+class PDFUploadResponse(BaseModel):
+    success: bool
+    message: str
+
+class UserRegisterIn(BaseModel):
+    username: str
+    password: str
+    email: EmailStr
+
+class UserLoginIn(BaseModel):
+    login: str
+    password: str
+
+# Utility functions
 def extract_text_from_website(url: str) -> str:
     try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        texts = soup.stripped_strings
-        return " ".join(texts)
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        return " ".join(soup.stripped_strings)[:8000]
     except Exception as e:
-        return f"Błąd: {e}"
+        logger.error(f"Website extraction failed for {url}: {e}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail="Failed to fetch or parse website content.")
 
+# Lifecycle events
 @app.on_event("startup")
 async def startup():
     await database.connect()
@@ -44,17 +84,16 @@ async def startup():
 async def shutdown():
     await database.disconnect()
 
-@app.post("/register")
-async def register(name: str = Form(...), website: str = Form(...)):
-    text = extract_text_from_website(website)[:8000]
-
-    existing = await database.fetch_one(
+# Routes
+@app.post("/register", response_model=ClientOut)
+async def register_client(payload: ClientIn, db: Database = Depends(get_db)):
+    txt = extract_text_from_website(payload.website)
+    existing = await db.fetch_one(
         "SELECT id FROM clients WHERE name = :name",
-        values={"name": name}
+        values={"name": payload.name}
     )
-
     if existing:
-        await database.execute(
+        await db.execute(
             """
             UPDATE clients
             SET website = :website,
@@ -62,59 +101,48 @@ async def register(name: str = Form(...), website: str = Form(...)):
                 extracted_text_timestamp = NOW()
             WHERE name = :name
             """,
-            values={"name": name, "website": website, "text": text}
+            values={"name": payload.name, "website": str(payload.website), "text": txt}
         )
         client_id = existing["id"]
-        message = "Dane firmy zostały zaktualizowane"
+        msg = "Client updated successfully"
     else:
         client_id = str(uuid4())
-        await database.execute(
+        await db.execute(
             """
-            INSERT INTO clients
-              (id, name, website, extracted_text, extracted_text_timestamp)
-            VALUES
-              (:id, :name, :website, :text, NOW())
+            INSERT INTO clients(id, name, website, extracted_text, extracted_text_timestamp)
+            VALUES(:id, :name, :website, :text, NOW())
             """,
-            values={"id": client_id, "name": name, "website": website, "text": text}
+            values={"id": client_id, "name": payload.name, "website": str(payload.website), "text": txt}
         )
-        message = "Dane firmy zostały zapisane"
-
-    return {"success": True, "message": message, "client_id": client_id}
-
-
+        msg = "Client registered successfully"
+    return {"success": True, "message": msg, "client_id": client_id}
 
 @app.post("/prompt")
-async def save_prompt(name: str = Form(...), prompt: str = Form(...)):
-    await database.execute(
+async def save_prompt(payload: PromptIn, db: Database = Depends(get_db)):
+    await db.execute(
         """
         UPDATE clients
         SET custom_prompt = :prompt,
             custom_prompt_timestamp = NOW()
         WHERE name = :name
         """,
-        values={"name": name, "prompt": prompt}
+        values={"name": payload.name, "prompt": payload.prompt[:2000]}
     )
-    return {"success": True, "message": "Prompt zapisany pomyślnie"}
+    return {"success": True, "message": "Prompt saved successfully"}
 
-# GET /client/{name} – pobiera całe konto klienta
 @app.get("/client/{name}")
-async def get_client(name: str):
-    row = await database.fetch_one(
-        """
-        SELECT name, website, extracted_text, custom_prompt
-        FROM clients
-        WHERE name = :name
-        """,
+async def get_client(name: str, db: Database = Depends(get_db)):
+    row = await db.fetch_one(
+        "SELECT name, website, extracted_text, custom_prompt FROM clients WHERE name = :name",
         values={"name": name}
     )
     if not row:
-        raise HTTPException(status_code=404, detail="Firma nie znaleziona")
+        raise HTTPException(status_code=404, detail="Client not found")
     return dict(row)
 
-# POST /update-data – aktualizuje ręcznie extracted_text
 @app.post("/update-data")
-async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
-    await database.execute(
+async def update_data(name: str = Form(...), extracted_text: str = Form(...), db: Database = Depends(get_db)):
+    await db.execute(
         """
         UPDATE clients
         SET extracted_text = :text,
@@ -123,200 +151,113 @@ async def update_data(name: str = Form(...), extracted_text: str = Form(...)):
         """,
         values={"name": name, "text": extracted_text[:8000]}
     )
-    return {"success": True, "message": "Dane zostały zaktualizowane"}
+    return {"success": True, "message": "Data updated successfully"}
 
-# 1) Upload PDF z ekstrakcją tekstu
-@app.post("/upload-pdf")
-async def upload_pdf(
-    client_name: str = Form(...),
-    pdf_file: UploadFile = File(...)
-):
-    data = await pdf_file.read()
-    # 1. parsowanie PDF z PyPDF2
+@app.post("/upload-pdf", response_model=PDFUploadResponse)
+async def upload_pdf(client_name: str = Form(...), pdf_file: UploadFile = File(...), db: Database = Depends(get_db)):
+    content = await pdf_file.read()
+    if pdf_file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="File must be a PDF.")
     try:
-        reader = PdfReader(io.BytesIO(data))
-        text_pages = [page.extract_text() or "" for page in reader.pages]
-        pdf_text = "\n\n".join(text_pages)
+        reader = PdfReader(io.BytesIO(content))
+        pages = [p.extract_text() or "" for p in reader.pages]
+        text = "\n\n".join(pages)[:1000000]
     except Exception as e:
-        raise HTTPException(400, f"Nie udało się przetworzyć PDF: {e}")
-
-    # 2. zapis do bazy w jednej transakcji
-    await database.execute(
+        logger.error(f"PDF parsing failed: {e}")
+        raise HTTPException(status_code=400, detail="Failed to process PDF.")
+    await db.execute(
         """
-        INSERT INTO documents
-          (client_name, file_name, file_data, pdf_text, uploaded_at)
-        VALUES
-          (:name, :fname, :data, :pdf_text, NOW())
+        INSERT INTO documents(client_name, file_name, file_data, pdf_text, uploaded_at)
+        VALUES(:name, :fname, :data, :text, NOW())
         """,
-        values={
-            "name": client_name,
-            "fname": pdf_file.filename,
-            "data": data,
-            "pdf_text": pdf_text[:1000000]  # opcjonalnie przytnij długie
-        }
+        values={"name": client_name, "fname": pdf_file.filename, "data": content, "text": text}
     )
+    return {"success": True, "message": f"Uploaded {pdf_file.filename}"}
 
-    return {"success": True, "message": f"Załadowano {pdf_file.filename}"}
-
-# 2) Download latest PDF
 @app.get("/download-pdf/{client_name}")
-async def download_pdf(client_name: str):
-    row = await database.fetch_one(
-      """
-      SELECT file_name, file_data
-      FROM documents
-      WHERE client_name = :name
-      ORDER BY uploaded_at DESC
-      LIMIT 1
-      """,
-      values={"name": client_name}
+async def download_pdf(client_name: str, db: Database = Depends(get_db)):
+    row = await db.fetch_one(
+        "SELECT file_name, file_data FROM documents WHERE client_name = :name ORDER BY uploaded_at DESC LIMIT 1",
+        values={"name": client_name}
     )
     if not row:
-        raise HTTPException(404, "Nie znaleziono pliku dla tej firmy")
-    return StreamingResponse(
-      io.BytesIO(row["file_data"]),
-      media_type="application/pdf",
-      headers={"Content-Disposition": f"attachment; filename={row['file_name']}"}
-    )
-# 3) Aktualizauje recznie pdf
+        raise HTTPException(status_code=404, detail="No PDF found for this client.")
+    return StreamingResponse(io.BytesIO(row["file_data"]), media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=\"{row['file_name']}\""
+    })
 
-# GET /client/{name}/pdf
 @app.get("/client/{name}/pdf")
-async def get_pdf_text(name: str):
-    row = await database.fetch_one(
-        """
-        SELECT pdf_text
-        FROM documents
-        WHERE client_name = :name
-        ORDER BY uploaded_at DESC
-        LIMIT 1
-        """,
+async def get_pdf_text(name: str, db: Database = Depends(get_db)):
+    row = await db.fetch_one(
+        "SELECT pdf_text FROM documents WHERE client_name = :name ORDER BY uploaded_at DESC LIMIT 1",
         values={"name": name}
     )
     if not row:
-        raise HTTPException(404, "Brak PDF dla tej firmy")
+        raise HTTPException(status_code=404, detail="No PDF text for this client.")
     return JSONResponse({"pdf_text": row["pdf_text"]})
 
-# POST /update-pdf-text
 @app.post("/update-pdf-text")
-async def update_pdf_text(
-    name: str = Form(...),
-    pdf_text: str = Form(...)
-):
-    # aktualizujemy tylko ostatni dokument dla danego klienta
-    result = await database.execute(
+async def update_pdf_text(name: str = Form(...), pdf_text: str = Form(...), db: Database = Depends(get_db)):
+    await db.execute(
         """
         UPDATE documents
-        SET pdf_text = :pdf_text
+        SET pdf_text = :text
         WHERE id = (
-          SELECT id FROM documents
-          WHERE client_name = :name
-          ORDER BY uploaded_at DESC
-          LIMIT 1
+            SELECT id FROM documents WHERE client_name = :name ORDER BY uploaded_at DESC LIMIT 1
         )
         """,
-        values={"name": name, "pdf_text": pdf_text[:1000000]}
+        values={"name": name, "text": pdf_text[:1000000]}
     )
-    return {"success": True, "message": "PDF zaktualizowany"}
-    
+    return {"success": True, "message": "PDF text updated successfully"}
 
 @app.post("/users/register")
-async def register_user(
-    username: str = Form(...),
-    password: str = Form(...),
-    email:    str = Form(...),
-):
-    password_hash = pwd_ctx.hash(password)
-
-    # 1) Wstawiamy nowego użytkownika i pobieramy embed_key
+async def register_user(payload: UserRegisterIn, db: Database = Depends(get_db)):
+    hashed = pwd_context.hash(payload.password)
     try:
-        row = await database.fetch_one(
-            """
-            INSERT INTO users (username, password_hash, email)
-            VALUES (:u, :p, :e)
-            RETURNING embed_key
-            """,
-            values={"u": username, "p": password_hash, "e": email}
+        row = await db.fetch_one(
+            "INSERT INTO users(username, password_hash, email) VALUES(:u, :p, :e) RETURNING embed_key",
+            values={"u": payload.username, "p": hashed, "e": payload.email}
         )
-    except Exception:
-        raise HTTPException(400, "Użytkownik lub email już istnieje")
-
+    except Exception as e:
+        logger.error(f"User registration failed: {e}")
+        raise HTTPException(status_code=400, detail="Username or email already exists.")
     embed_key = row["embed_key"]
-
-    # 2) Upsert w tabeli clients
-    await database.execute(
-        """
-        INSERT INTO clients (name, embed_key)
-        VALUES (:name, :ek)
-        ON CONFLICT (name) DO
-          UPDATE SET embed_key = EXCLUDED.embed_key
-        """,
-        values={"name": username, "ek": embed_key}
+    await db.execute(
+        "INSERT INTO clients(name, embed_key) VALUES(:n, :ek) ON CONFLICT(name) DO UPDATE SET embed_key = EXCLUDED.embed_key",
+        values={"n": payload.username, "ek": embed_key}
     )
-
-    # 3) Upsert w tabeli documents – analogicznie do clients
-    await database.execute(
-        """
-        INSERT INTO documents (client_name, client_id)
-        VALUES (:name, :ek)
-        ON CONFLICT (client_name) DO
-          UPDATE SET client_id = EXCLUDED.client_id
-        """,
-        values={"name": username, "ek": embed_key}
-    )
-
     return {"success": True, "embed_key": embed_key}
-    
-# ——— Logowanie ———
+
 @app.post("/users/login")
-async def login_user(
-    login:    str = Form(...),  # tu user może podać username lub email
-    password: str = Form(...),
-):
-    # znajdź usera po username lub email
-    row = await database.fetch_one(
-        "SELECT username,password_hash FROM users WHERE username=:l OR email=:l",
-        values={"l": login}
+async def login_user(payload: UserLoginIn, db: Database = Depends(get_db)):
+    row = await db.fetch_one(
+        "SELECT username, password_hash FROM users WHERE username=:l OR email=:l",
+        values={"l": payload.login}
     )
-    if not row or not pwd_ctx.verify(password, row["password_hash"]):
-        raise HTTPException(401, "Nieprawidłowe dane logowania")
+    if not row or not pwd_context.verify(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
     return {"success": True, "username": row["username"]}
 
-# ——— AUTOMATYZACJA ———
 @app.post("/users/generate-embed")
-async def generate_embed(username: str = Form(...)):
-    row = await database.fetch_one(
-        "SELECT embed_key FROM users WHERE username = :u",
-        values={"u": username}
-    )
+async def generate_embed(username: str = Form(...), db: Database = Depends(get_db)):
+    row = await db.fetch_one("SELECT embed_key FROM users WHERE username = :u", values={"u": username})
     if not row:
-        raise HTTPException(404, "Nie znaleziono użytkownika")
-
-    embed_key = row["embed_key"] or str(uuid.uuid4())
-    # jeśli było NULL, zaktualizuj
+        raise HTTPException(status_code=404, detail="User not found")
+    key = row["embed_key"] or str(uuid4())
     if row["embed_key"] is None:
-        await database.execute(
-            "UPDATE users SET embed_key = :ek WHERE username = :u",
-            values={"ek": embed_key, "u": username}
-        )
-
-    snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={embed_key}" async></script>"""
+        await db.execute("UPDATE users SET embed_key = :ek WHERE username = :u", values={"ek": key, "u": username})
+    snippet = f'<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={key}" async></script>'
     return {"snippet": snippet}
 
-
 @app.get("/chats")
-async def list_chats():
-    rows = await database.fetch_all(
+async def list_chats(db: Database = Depends(get_db)):
+    rows = await db.fetch_all(
         """
-        SELECT
-          client_id,
-          messages,
-          -- tu robimy ISO-8601 w UTC:
-          to_char(timestamp at time zone 'UTC',
-                  'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-            AS timestamp
+        SELECT client_id, messages,
+               to_char(timestamp AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS timestamp
         FROM chats
         ORDER BY timestamp DESC
         """
     )
-    return [dict(row) for row in rows]
+    return [dict(r) for r in rows]
