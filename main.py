@@ -10,6 +10,8 @@ import io
 from passlib.context import CryptContext
 import uuid
 from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
+from fastapi.responses import Response
+from datetime import timedelta
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -271,17 +273,33 @@ async def register_user(
 # ——— Logowanie ———
 @app.post("/users/login")
 async def login_user(
-    login:    str = Form(...),  # tu user może podać username lub email
-    password: str = Form(...),
+    response: Response,
+    login: str = Form(...),
+    password: str = Form(...)
 ):
-    # znajdź usera po username lub email
     row = await database.fetch_one(
         "SELECT username,password_hash FROM users WHERE username=:l OR email=:l",
         values={"l": login}
     )
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
-    return {"success": True, "username": row["username"]}
+
+    # ➕ Ustaw cookie (ważne: HttpOnly i Secure)
+    response.set_cookie(
+        key="username",
+        value=row["username"],
+        httponly=True,
+        secure=True,  # tylko przez HTTPS
+        max_age=int(timedelta(days=1).total_seconds()),
+        samesite="Lax"
+    )
+
+    return {"success": True}
+# Dodaj endpoint do wylogowania:
+@app.post("/users/logout")
+async def logout_user(response: Response):
+    response.delete_cookie("username")
+    return {"success": True}
 
 # ——— AUTOMATYZACJA ———
 @app.post("/users/generate-embed")
