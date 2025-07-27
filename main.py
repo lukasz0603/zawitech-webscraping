@@ -22,7 +22,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://zawitech-frontend.onrender.com"],  # ✅ konkretny frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
