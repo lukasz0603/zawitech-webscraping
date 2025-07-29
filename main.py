@@ -47,7 +47,7 @@ async def shutdown():
 
 @app.post("/register")
 async def register(name: str = Form(...), website: str = Form(...)):
-    text = extract_text_from_website(website)[:8000]
+    text = extract_text_from_website(website)
 
     existing = await database.fetch_one(
         "SELECT id FROM clients WHERE name = :name",
