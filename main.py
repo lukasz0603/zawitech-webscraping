@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query, Request, Depends
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse,JSONResponse
 import requests
@@ -10,8 +10,6 @@ import io
 from passlib.context import CryptContext
 import uuid
 from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
-from fastapi.responses import Response
-from datetime import timedelta
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -22,7 +20,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://zawitech-frontend.onrender.com"],  # ✅ konkretny frontend
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -273,33 +271,17 @@ async def register_user(
 # ——— Logowanie ———
 @app.post("/users/login")
 async def login_user(
-    response: Response,
-    login: str = Form(...),
-    password: str = Form(...)
+    login:    str = Form(...),  # tu user może podać username lub email
+    password: str = Form(...),
 ):
+    # znajdź usera po username lub email
     row = await database.fetch_one(
         "SELECT username,password_hash FROM users WHERE username=:l OR email=:l",
         values={"l": login}
     )
     if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(401, "Nieprawidłowe dane logowania")
-
-    # ➕ Ustaw cookie (ważne: HttpOnly i Secure)
-    response.set_cookie(
-        key="username",
-        value=row["username"],
-        httponly=True,
-        secure=True,  # tylko przez HTTPS
-        max_age=int(timedelta(days=1).total_seconds()),
-        samesite="Lax"
-    )
-
-    return {"success": True}
-# Dodaj endpoint do wylogowania:
-@app.post("/users/logout")
-async def logout_user(response: Response):
-    response.delete_cookie("username")
-    return {"success": True}
+    return {"success": True, "username": row["username"]}
 
 # ——— AUTOMATYZACJA ———
 @app.post("/users/generate-embed")
@@ -338,22 +320,6 @@ async def generate_embed(username: str = Form(...)):
     return {"snippet": snippet}
 
 
-@app.get("/users/embed-snippet")
-async def get_embed_snippet(request: Request):
-    username = request.cookies.get("username")
-    if not username:
-        raise HTTPException(401, "Brak zalogowanego użytkownika")
-
-    row = await database.fetch_one(
-        "SELECT embed_key FROM users WHERE username = :u",
-        values={"u": username}
-    )
-    if not row or not row["embed_key"]:
-        raise HTTPException(404, "Brak wygenerowanego bota")
-
-    snippet = f"""<script src="https://zawitech-frontend.onrender.com/widget.js?client_id={row['embed_key']}" async></script>"""
-    return {"snippet": snippet}
-    
 @app.get("/chats")
 async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
     rows = await database.fetch_all(
@@ -372,3 +338,17 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
         values={"client_id": client_id}
     )
     return [dict(row) for row in rows]
+
+
+
+@app.get("/bot/exists")
+async def bot_exists(client_id: UUID = Query(...)):
+    try:
+        row = await database.fetch_one(
+            "SELECT 1 FROM bot_generation WHERE client_id = :cid",
+            values={"cid": client_id}
+        )
+        return {"exists": row is not None}
+    except Exception as e:
+        print("❌ /bot/exists error:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
