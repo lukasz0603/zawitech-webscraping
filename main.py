@@ -31,6 +31,10 @@ app.add_middleware(
 def extract_text_from_website(url: str) -> str:
     try:
         response = requests.get(url, timeout=10)
+
+        # ✅ Wymuszenie kodowania, aby uniknąć krzaków
+        response.encoding = 'utf-8'
+
         soup = BeautifulSoup(response.text, "html.parser")
         texts = soup.stripped_strings
         return " ".join(texts)
