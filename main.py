@@ -324,6 +324,25 @@ async def generate_embed(username: str = Form(...)):
     return {"snippet": snippet}
 
 
+@app.get("/bot/embed")
+async def get_bot_script(client_id: UUID = Query(...)):
+    try:
+        row = await database.fetch_one(
+            """
+            SELECT script
+            FROM bot_generation
+            WHERE client_id = :cid AND generated = TRUE
+            """,
+            values={"cid": client_id}
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Bot nie istnieje")
+
+        return {"script": row["script"]}
+    except Exception as e:
+        print("❌ /bot/embed error:", e)
+        raise HTTPException(status_code=500, detail="Błąd serwera")
+        
 @app.get("/chats")
 async def list_chats(client_id: str = Query(..., description="Embed key lub ID klienta")):
     rows = await database.fetch_all(
@@ -345,14 +364,4 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
 
 
 
-@app.get("/bot/exists")
-async def bot_exists(client_id: UUID = Query(...)):
-    try:
-        row = await database.fetch_one(
-            "SELECT 1 FROM bot_generation WHERE client_id = :cid",
-            values={"cid": client_id}
-        )
-        return {"exists": row is not None}
-    except Exception as e:
-        print("❌ /bot/exists error:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+
