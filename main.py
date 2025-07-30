@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse,JSONResponse
 import requests
@@ -10,7 +10,11 @@ import io
 from passlib.context import CryptContext
 import uuid
 from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
-from tracking_backend import router as tracking_router
+from datetime import datetime
+
+
+
+
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -19,7 +23,7 @@ database = databases.Database(DATABASE_URL)
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI()
-app.include_router(tracking_router)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -365,6 +369,52 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
     )
     return [dict(row) for row in rows]
 
+
+
+
+# Endpoint do trackowania użytkownika
+@app.post("/track")
+async def track_user(request: Request):
+    data = await request.json()
+    client_ip = request.client.host
+    user_agent = request.headers.get("User-Agent")
+    referrer = request.headers.get("Referer") or data.get("referrer")
+
+    values = {
+        "ip": client_ip,
+        "location": data.get("location"),
+        "referrer": referrer,
+        "user_agent": user_agent,
+        "page_url": data.get("page_url"),
+        "duration": data.get("duration"),
+        "client_id": data.get("client_id")
+    }
+
+    await database.execute("""
+        INSERT INTO chat_tracking (ip, location, referrer, user_agent, page_url, duration, client_id)
+        VALUES (:ip, :location, :referrer, :user_agent, :page_url, :duration, :client_id)
+    """, values)
+
+    return {"success": True}
+
+# Endpoint do pobrania danych trackingowych (prosta autoryzacja przez cookie)
+@app.get("/tracking")
+async def get_tracking_data(request: Request):
+    username = request.cookies.get("username")
+    if username != "admin":
+        raise HTTPException(status_code=401, detail="Brak dostępu")
+
+    rows = await database.fetch_all("SELECT * FROM chat_tracking ORDER BY timestamp DESC LIMIT 500")
+    return [dict(r) for r in rows]
+
+# Podłączenie/rozłączenie bazy przy starcie i zamknięciu
+@app.on_event("startup")
+async def startup():
+    await database.connect()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await database.disconnect()
 
 
 
