@@ -406,15 +406,15 @@ async def get_tracking_data(request: Request):
 
     rows = await database.fetch_all("SELECT * FROM chat_tracking ORDER BY timestamp DESC LIMIT 500")
     return [dict(r) for r in rows]
-
-# Podłączenie/rozłączenie bazy przy starcie i zamknięciu
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
-
+    
+# Endpoint do logowania dla admina zeby zobaczyc tracking data
+@app.post("/loginadmin")
+async def loginadmin(data: dict):
+    if data.get("password") == "tajnehaslo":
+        response = JSONResponse({"success": True})
+        response.set_cookie(key="username", value="admin", httponly=True)
+        return response
+    else:
+        raise HTTPException(status_code=401, detail="Niepoprawne hasło")
 
 
