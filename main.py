@@ -10,6 +10,7 @@ import io
 from passlib.context import CryptContext
 import uuid
 from PyPDF2 import PdfReader  # <--- IMPORTUJEMY PdfReader
+from tracking_backend import router as tracking_router
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -18,6 +19,8 @@ database = databases.Database(DATABASE_URL)
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI()
+app.include_router(tracking_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
