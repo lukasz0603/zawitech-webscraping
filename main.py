@@ -376,6 +376,7 @@ async def list_chats(client_id: str = Query(..., description="Embed key lub ID k
 @app.post("/track")
 async def track_user(request: Request):
     data = await request.json()
+    print("Dostałem dane:", data)
     client_ip = request.client.host
     user_agent = request.headers.get("User-Agent")
     referrer = request.headers.get("Referer") or data.get("referrer")
